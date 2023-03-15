@@ -1,0 +1,7 @@
+mimic-iv-2.1/
+*__pycache__*
+*.png
+*.pt
+*.npy
+*.pth
+*.csv
