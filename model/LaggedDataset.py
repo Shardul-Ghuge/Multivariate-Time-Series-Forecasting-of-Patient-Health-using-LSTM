@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset, DataLoader
 import torch
 
+#NOTE: Experimental code, not used in the final model
 class LaggedDataSet(Dataset):
     '''
     X is a tensor (num_samples - lags, lags, num_features) that represents a sequence of lags time steps for each sample, 

@@ -8,7 +8,6 @@ else:
     
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-#TODO: set up padding for the LSTM model so that it ignores zero values
 #create an LSTM model 
 class LSTM(torch.nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout_rate):
@@ -71,7 +70,7 @@ class Seq2Seq(torch.nn.Module):
 
         return out
 
-#TODO: modify the settings to match prev model
+#fix the dimensions to work with the LSTM model 
 class LSTM_Attention(torch.nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout_rate):
         super(LSTM_Attention, self).__init__()
