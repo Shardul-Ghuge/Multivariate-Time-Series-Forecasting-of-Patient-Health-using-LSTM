@@ -1,10 +1,12 @@
 import torch
 import numpy as np
+import os
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+DATA_DIR = "C:\\Users\\ghuge\\Desktop\\UofT\\Thesis\\Predicting-future-medical-diagnoses-with-LSTM\\model\\synthetic_data"
 
 #Input data parameters
-num_patients = 5000
+num_patients = 2000
 num_timesteps = 49
 num_features = 83
 
@@ -31,8 +33,10 @@ def correlation1_2_rest_0(num_patients, num_timesteps, num_features):
 
     #save the data
     print("X", X.shape, "y", y.shape)
-    torch.save(X, "size-{}-X_correlation1_2_rest_0.pt".format(num_patients))
-    torch.save(y, "size-{}-y_correlation1_2_rest_0.pt".format(num_patients))
+    x_path = os.path.join(DATA_DIR, "size-{}-X_correlation1_2_rest_0.pt".format(num_patients))
+    y_path = os.path.join(DATA_DIR, "size-{}-y_correlation1_2_rest_0.pt".format(num_patients))
+    torch.save(X, x_path)
+    torch.save(y, y_path)
 
 def correlation1_2_rest_random(num_patients, num_timesteps, num_features):
     #Generate a sysnthetic dataset for testing LSTM
@@ -61,8 +65,10 @@ def correlation1_2_rest_random(num_patients, num_timesteps, num_features):
 
     #save the data
     print("X", X.shape, "y", y.shape)
-    torch.save(X, "size-{}-X_correlation1_2_rest_random.pt".format(num_patients))
-    torch.save(y, "size-{}-y_correlation1_2_rest_random.pt".format(num_patients))
+    x_path = os.path.join(DATA_DIR, "size-{}-X_correlation1_2_rest_random.pt".format(num_patients))
+    y_path = os.path.join(DATA_DIR, "size-{}-y_correlation1_2_rest_random.pt".format(num_patients))
+    torch.save(X, x_path)
+    torch.save(y, y_path)
 
 def clipped_correlation1_2_rest_random(num_patients, num_timesteps, num_features):
     #Generate a sysnthetic dataset for testing LSTM
@@ -91,9 +97,10 @@ def clipped_correlation1_2_rest_random(num_patients, num_timesteps, num_features
     y = torch.from_numpy(y).float().to(device)
 
     #save the data
-    print("X", X.shape, "y", y.shape)
-    torch.save(X, "size-{}-X_correlation1_2_rest_random.pt".format(num_patients))
-    torch.save(y, "size-{}-y_correlation1_2_rest_random.pt".format(num_patients))
+    x_path = os.path.join(DATA_DIR, "size-{}-X_clipped_correlation1_2_rest_random.pt".format(num_patients))
+    y_path = os.path.join(DATA_DIR, "size-{}-y_clipped_correlation1_2_rest_random.pt".format(num_patients))
+    torch.save(X, x_path)
+    torch.save(y, y_path)
 
 
 if __name__ == "__main__":

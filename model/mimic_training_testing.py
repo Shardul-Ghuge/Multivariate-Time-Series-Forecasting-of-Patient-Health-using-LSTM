@@ -34,9 +34,18 @@ else:
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #load the LSTM train, val and test datasets
-train_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_train.pt"))
-val_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_val.pt"))
-test_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_test.pt"))
+train_tensor = torch.load(os.path.join(DATA_DIR,"0.29-mortality_ratio_train.pt"))
+val_tensor = torch.load(os.path.join(DATA_DIR,"0.29-mortality_ratio_val.pt"))
+test_tensor = torch.load(os.path.join(DATA_DIR,"0.29-mortality_ratio_test.pt"))
+
+print("train tensor shape: ", train_tensor.shape)
+print("val tensor shape: ", val_tensor.shape)
+print("test tensor shape: ", test_tensor.shape)
+
+# #load the LSTM train, val and test datasets
+# train_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_train.pt"))
+# val_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_val.pt"))
+# test_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_test.pt"))
 
 # #fill in the nan values with 0 for the train, val and test datasets
 # train_tensor = torch.nan_to_num(train_tensor).float()
@@ -54,10 +63,6 @@ y_val = val_tensor[:, :-1, :]
 #split the test_tensor time series into x_test and y_test
 x_test = test_tensor[:, 1:, :]
 y_test = test_tensor[:, :-1, :]
-
-print("verify sample patient")
-print("x_test", x_test[79, :, 82])
-print("y_test", y_test[79, :, 82])
 
 batch_size = 64
 
@@ -195,7 +200,7 @@ num_layers = 3 #depth of the model
 output_size = 83 #same as input_size becasue we are predicting all 82 variables
 dropout_rate = 0.2
 
-n_epochs = 50
+n_epochs = 75
 learning_rate = 1e-3
 weight_decay = 1e-6
 

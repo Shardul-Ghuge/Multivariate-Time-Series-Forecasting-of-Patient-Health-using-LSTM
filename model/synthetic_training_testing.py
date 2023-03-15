@@ -34,9 +34,13 @@ else:
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #load the time-lagged synthetic data
-X = torch.load(os.path.join(DATA_DIR,"size-5000-X_correlation1_2_rest_random.pt"))
-y = torch.load(os.path.join(DATA_DIR,"size-5000-y_correlation1_2_rest_random.pt"))
-num_patients = X.shape[0]
+num_patients = 200
+X = torch.load(os.path.join(DATA_DIR,"size-{}-X_correlation1_2_rest_random.pt".format(num_patients)))
+y = torch.load(os.path.join(DATA_DIR,"size-{}-y_correlation1_2_rest_random.pt".format(num_patients)))
+
+#if "patients-{}" folder does not exist, create it
+if not os.path.exists(os.path.join(MODEL_PATH, model_type, "synthetic-data", "patients-{}".format(num_patients))):
+    os.makedirs(os.path.join(MODEL_PATH, model_type, "synthetic-data", "patients-{}".format(num_patients))) 
 RESULTS_PATH = os.path.join(MODEL_PATH, model_type, "synthetic-data", "patients-{}".format(num_patients))
 
 #split the data into train, val and test sets (80%, 10%, 10%)
@@ -52,7 +56,7 @@ print("x_train", x_train.shape, "y_train", y_train.shape)
 print("x_val", x_val.shape, "y_val", y_val.shape)
 print("x_test", x_test.shape, "y_test", y_test.shape)
 
-batch_size = 64
+batch_size = 16
 
 #create train, val and test loaders
 train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=False, drop_last=True)
@@ -189,7 +193,7 @@ num_layers = 3 #depth of the model
 output_size = 83 #same as input_size becasue we are predicting all 82 variables
 dropout_rate = 0.2
 
-n_epochs = 100
+n_epochs = 250
 learning_rate = 1e-3
 weight_decay = 1e-6
 

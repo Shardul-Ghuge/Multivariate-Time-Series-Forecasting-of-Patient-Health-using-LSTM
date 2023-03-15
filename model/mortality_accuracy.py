@@ -19,14 +19,15 @@ predictions_mortality[predictions_mortality > 0.95] = 1
 # print("targets_mortality: ", targets_mortality[79])
 # print("predictions_mortality: ", predictions_mortality[79])
 
-#find how many entries in predictions_mortality are over 0.5
-print("predictions_mortality > 0.5: ", np.sum(predictions_mortality > 0.5))
+#find how many entries in predictions_mortality are over theresold
+print("predictions_mortality > 0.95: ", np.sum(predictions_mortality > 0.95))
+print("targets_mortality > 0.95: ", np.sum(targets_mortality > 0.95))
 
-# # Compare predicted and target mortality arrays element-wise
-# correct = predictions_mortality == targets_mortality
+# Compare predicted and target mortality arrays element-wise
+correct = predictions_mortality == targets_mortality
 
-# Compare predicted and target mortality arrays for only last time step
-correct = predictions_mortality[:, -1] == targets_mortality[:, -1]
+# # Compare predicted and target mortality arrays for only last time step
+# correct = predictions_mortality[:, -1] == targets_mortality[:, -1]
 
 # Calculate accuracy as the fraction of correct predictions
 accuracy = np.mean(correct)
