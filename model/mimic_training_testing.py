@@ -10,11 +10,15 @@ DATA_DIR = "C:\\Users\\ghuge\\Desktop\\UofT\\Thesis\\Predicting-future-medical-d
 MODEL_PATH = "C:\\Users\\ghuge\\Desktop\\UofT\\Thesis\\Predicting-future-medical-diagnoses-with-LSTM\\model\\trained_models"
 model_type = "base_lstm"
 #model_type = "seq2seq"
+#model_type = "teacher_forcing"
+#model_type = "attention"
 
 def get_model(model, model_params):
     models = {
-        "base_lstm": LSTM,
+        "base_lstm": BASE_LSTM,
         "seq2seq": Seq2Seq,
+        "teacher_forcing": Seq2Seq_TeacherForcing,
+        "attention": Seq2Seq_Attention
     }
     return models.get(model.lower())(**model_params)
 
@@ -34,35 +38,29 @@ else:
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #load the LSTM train, val and test datasets
-train_tensor = torch.load(os.path.join(DATA_DIR,"0.29-mortality_ratio_train.pt"))
-val_tensor = torch.load(os.path.join(DATA_DIR,"0.29-mortality_ratio_val.pt"))
-test_tensor = torch.load(os.path.join(DATA_DIR,"0.29-mortality_ratio_test.pt"))
+train_tensor = torch.load(os.path.join(DATA_DIR,"0.4-mortality_ratio_train.pt")) #replace filename to load other datasets from processed_tensors folder
+val_tensor = torch.load(os.path.join(DATA_DIR,"0.4-mortality_ratio_val.pt"))
+test_tensor = torch.load(os.path.join(DATA_DIR,"0.4-mortality_ratio_test.pt"))
 
 print("train tensor shape: ", train_tensor.shape)
 print("val tensor shape: ", val_tensor.shape)
 print("test tensor shape: ", test_tensor.shape)
 
-# #load the LSTM train, val and test datasets
-# train_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_train.pt"))
-# val_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_val.pt"))
-# test_tensor = torch.load(os.path.join(DATA_DIR,"LSTM_mortality_test.pt"))
-
-# #fill in the nan values with 0 for the train, val and test datasets
-# train_tensor = torch.nan_to_num(train_tensor).float()
-# val_tensor = torch.nan_to_num(val_tensor).float()
-# test_tensor = torch.nan_to_num(test_tensor).float()
+# #split the train_tensor time series into x_train and y_train
+# x_train = train_tensor[:, 1:, :]
+# y_train = train_tensor[:, :-1, :] #timeshift y_train to be same as x_train but time shifted 1 timestep into the future
 
 #split the train_tensor time series into x_train and y_train
-x_train = train_tensor[:, 1:, :]
-y_train = train_tensor[:, :-1, :] #timeshift y_train to be same as x_train but time shifted 1 timestep into the future
+x_train = train_tensor[:, :-1, :]
+y_train = train_tensor[:, 1:, :]
 
 #split the val_tensor time series into x_val and y_val
-x_val = val_tensor[:, 1:, :]
-y_val = val_tensor[:, :-1, :]
+x_val = val_tensor[:, :-1, :]
+y_val = val_tensor[:, 1:, :]
 
 #split the test_tensor time series into x_test and y_test
-x_test = test_tensor[:, 1:, :]
-y_test = test_tensor[:, :-1, :]
+x_test = test_tensor[:, :-1, :]
+y_test = test_tensor[:, 1:, :]
 
 batch_size = 64
 
@@ -86,8 +84,12 @@ class Optimization:
         # Sets model to train mode
         self.model.train()
 
-        # Makes predictions
-        yhat = self.model(x)
+        if model_type == "teacher_forcing" or model_type == "attention":
+            # Makes predictions
+            yhat = self.model(x, y) #need y for teacher-forcing
+        else:
+            # Makes predictions
+            yhat = self.model(x) #for BASE_LSTM
 
         # Computes loss
         loss = self.loss_fn(y, yhat)
@@ -104,11 +106,21 @@ class Optimization:
         return loss.item()
 
     def train(self, train_loader, val_loader, n_epochs):
+        '''Has early stopping enabled so that when there more than 5 epochs 
+        with no improvement in validation loss, the training stops.
+        This helps prevent overfitting and saves time.
+        '''
         model_path = os.path.join(MODEL_PATH, model_type, f'{model_type}_best_model_{datetime.now().strftime("%Y-%m-%d")}.pth')   
         best_val_loss = float('inf')
-        
+        patience = 5
+        epochs_without_improvement = 0
+    
         print("started training")
         for epoch in range(1, n_epochs + 1):
+            if epochs_without_improvement > patience:
+                print(f"Early stopping at epoch {epoch}.")
+                break
+
             batch_losses = []
             for x_batch, y_batch in train_loader:
                 x_batch = x_batch.to(device)
@@ -124,7 +136,11 @@ class Optimization:
                     x_val = x_val.to(device)
                     y_val = y_val.to(device)
                     self.model.eval()
-                    yhat = self.model(x_val)
+                    if model_type == "teacher_forcing" or model_type == "attention":
+                        yhat = self.model(x_val, y_val, teacher_forcing_ratio=0)
+                    else:
+                        yhat = self.model(x_val)
+
                     val_loss = self.loss_fn(y_val, yhat)
                     batch_val_losses.append(val_loss.item())
                 validation_loss = np.mean(batch_val_losses)
@@ -135,13 +151,15 @@ class Optimization:
                     f"[{epoch}/{n_epochs}] Training loss: {training_loss:.6f}\t Validation loss: {validation_loss:.6f}"
                 )
 
-            #Only save the model if the validation loss is the lowest
             if validation_loss < best_val_loss:
                 best_val_loss = validation_loss
                 best_epoch = epoch
+                epochs_without_improvement = 0
                 torch.save(self.model.state_dict(), model_path)
-        
-        print("Best {} model saved at lowest validation set error of {} at epoch {}".format(model_type ,np.round(best_val_loss,6), best_epoch)) 
+            else:
+                epochs_without_improvement += 1
+
+        print("Best {} model saved at lowest validation set error of {} at epoch {}".format(model_type, np.round(best_val_loss, 6), best_epoch)) 
         
     def evaluate(self, test_loader):
         '''
@@ -150,6 +168,13 @@ class Optimization:
         Thats why we create a prediction_batch and target_batch list. Then, you can concatenate the predicted and target 
         values from all batches into a single 3D numpy array using the np.concatenate function
         '''
+        # Load the best saved model from training
+        model_path = os.path.join(MODEL_PATH, model_type, f'{model_type}_best_model_{datetime.now().strftime("%Y-%m-%d")}.pth')
+        self.model.load_state_dict(torch.load(model_path))
+        
+        # Print the name of the best saved model
+        print(f"Loaded the best saved model: {os.path.basename(model_path)}")
+
         print("started evaluation")
         with torch.no_grad():
             batch_test_losses = []
@@ -162,7 +187,14 @@ class Optimization:
                 x_test = x_test.to(device)
                 y_test = y_test.to(device)
                 self.model.eval()
-                yhat = self.model(x_test)
+                
+                if model_type == "teacher_forcing" or model_type == "attention": 
+                    # Makes predictions
+                    yhat = self.model(x_test, y_test, teacher_forcing_ratio=0) #to make the model rely only on its own predictions
+                else:
+                    # Makes predictions
+                    yhat = self.model(x_test) #for BASE_LSTM
+                
                 inputs = x_test.cpu().detach().numpy()
                 predicted  = yhat.cpu().detach().numpy()
                 target = y_test.cpu().detach().numpy()
@@ -190,7 +222,8 @@ class Optimization:
         plt.title("Losses for {} model".format(model_type))
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
-        plt.savefig('trained_models/{}/train_and_val_loss.png'.format(model_type))
+        pic_path = os.path.join(MODEL_PATH, model_type, 'train_and_val_loss.png') 
+        plt.savefig(pic_path)
 
 
 #define the LSTM/Seq2Seq model parameters
@@ -200,7 +233,7 @@ num_layers = 3 #depth of the model
 output_size = 83 #same as input_size becasue we are predicting all 82 variables
 dropout_rate = 0.2
 
-n_epochs = 75
+n_epochs = 50
 learning_rate = 1e-3
 weight_decay = 1e-6
 
@@ -221,9 +254,10 @@ opt.plot_losses()
 inputs, predictions, targets = opt.evaluate(test_loader)
 
 #save the predictions and targets as numpy arrays for future use
-np.save('trained_models/{}/inputs.npy'.format(model_type), inputs)
-np.save('trained_models/{}/predictions.npy'.format(model_type), predictions)
-np.save('trained_models/{}/targets.npy'.format(model_type), targets)
+
+np.save(os.path.join(MODEL_PATH, model_type, "inputs.npy"), inputs)
+np.save(os.path.join(MODEL_PATH, model_type, "predictions.npy"), predictions)
+np.save(os.path.join(MODEL_PATH, model_type, "targets.npy"), targets)
 
 print("Done training and evaluating the model!")
 

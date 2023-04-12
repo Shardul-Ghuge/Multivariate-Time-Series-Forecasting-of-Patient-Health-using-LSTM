@@ -26,8 +26,8 @@ def correlation1_2_rest_0(num_patients, num_timesteps, num_features):
                 data[i, j+1, 1] = 1 #feature_2 will be 1 next timestep if feature_1 is greater than 0.5 now
 
     #X is lagged by 1 timestep relative to y
-    X = data[:, 1:, :]
-    y = data[:, :-1, :]
+    X = data[:, :-1, :]
+    y = data[:, 1:, :]
     X = torch.from_numpy(X).float().to(device)
     y = torch.from_numpy(y).float().to(device)
 
@@ -58,8 +58,8 @@ def correlation1_2_rest_random(num_patients, num_timesteps, num_features):
                 data[i, j, k] = np.random.uniform(0, 1)
 
     #X is lagged by 1 timestep relative to y
-    X = data[:, 1:, :]
-    y = data[:, :-1, :]
+    X = data[:, :-1, :]
+    y = data[:, 1:, :]
     X = torch.from_numpy(X).float().to(device)
     y = torch.from_numpy(y).float().to(device)
 
@@ -91,8 +91,8 @@ def clipped_correlation1_2_rest_random(num_patients, num_timesteps, num_features
                 data[i, j, k] = np.random.uniform(0, 1)
 
     #X is lagged by 1 timestep relative to y
-    X = data[:, 1:, :]
-    y = data[:, :-1, :]
+    X = data[:, :-1, :]
+    y = data[:, 1:, :]
     X = torch.from_numpy(X).float().to(device)
     y = torch.from_numpy(y).float().to(device)
 

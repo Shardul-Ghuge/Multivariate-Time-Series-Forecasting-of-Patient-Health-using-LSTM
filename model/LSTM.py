@@ -1,4 +1,5 @@
 import torch
+import random
 
 # check if GPU is available
 if(torch.cuda.is_available()):
@@ -8,16 +9,46 @@ else:
     
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-#create an LSTM model 
-class LSTM(torch.nn.Module):
+#Base LSTM model 
+class BASE_LSTM(torch.nn.Module):
+    """
+    A simple LSTM model for multivariate time series forecasting.
+    
+    The model takes an input tensor of shape (batch_size, seq_length, input_size) and passes it through an LSTM layer.
+    The output of the LSTM layer is then passed through a fully connected (Linear) layer to produce the final output
+    of shape (batch_size, seq_length, output_size), which represents the predicted time series for all time steps.
+
+    Attributes:
+        num_layers (int): Number of LSTM layers.
+        hidden_size (int): Number of hidden units in the LSTM layers.
+        lstm (nn.LSTM): LSTM layer.
+        fc (nn.Linear): Fully connected (Linear) layer.
+
+    Args:
+        input_size (int): The number of input features (dimensions) of the time series.
+        hidden_size (int): The number of hidden units in the LSTM layers.
+        num_layers (int): The number of LSTM layers.
+        output_size (int): The number of output features (dimensions) of the predicted time series.
+        dropout_rate (float): The dropout rate for the LSTM layers.
+    """
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout_rate):
-        super(LSTM, self).__init__()
+        super(BASE_LSTM, self).__init__()
         self.num_layers = num_layers
         self.hidden_size = hidden_size
         self.lstm = torch.nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout = dropout_rate)
         self.fc = torch.nn.Linear(hidden_size, output_size)
         
     def forward(self, x):
+        """
+        Forward pass of the LSTM model.
+        
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, seq_length, input_size).
+
+        Returns:
+            out (torch.Tensor): Output tensor of shape (batch_size, seq_length, output_size),
+                                representing the predicted time series for all time steps.
+        """
         # Set initial hidden and cell states 
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device) 
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
@@ -28,18 +59,41 @@ class LSTM(torch.nn.Module):
 
 
 class Seq2Seq(torch.nn.Module):
-    '''
-    The key change here is the availabilty of the masking function to handle the sparsity in our data. 
-    The self.mask(x) line in forward applies a masking operation on the input tensor x. The mask function creates 
-    a masking layer that masks all elements in the input tensor that have a value of 0. This means that when the model processes 
-    the input tensor, it will treat all elements with a value of 0 as missing values, and will not take them into account when computing the output. 
-    This is useful for handling sparse input tensors like the one we have, where there are many time steps where there is no value for a feature. 
-    By masking these missing values, the model can focus on the non-zero values and make more accurate predictions.
+    """
+    Seq2Seq model for multivariate time series forecasting.
 
-    Input: X_train (batch_size, seq_length, input_size) where seq_length is 48 and input_size is 82
-    Output: (batch_size, seq_length, output_size) where seq_length is 48 and output_size is 82. This is the Multi-output time series forecast of all the features for all the time steps.
-    '''
+    This model consists of an encoder and a decoder. The encoder processes the input time series and generates a hidden state representation.
+    The decoder generates the output time series using the hidden states from the encoder.
+    
+    Args:
+        input_size (int): The number of input features.
+        hidden_size (int): The size of the hidden states in the LSTM layers.
+        num_layers (int): The number of LSTM layers in both the encoder and the decoder.
+        output_size (int): The number of output features.
+        dropout_rate (float): The dropout rate for the LSTM layers.
 
+    Input:
+        x (torch.Tensor): The input tensor with shape (batch_size, seq_length, input_size).
+        hidden (tuple, optional): The initial hidden and cell states for the encoder and decoder. Default: None.
+
+    Output:
+        out (torch.Tensor): The output tensor with shape (batch_size, seq_length, output_size), representing the predicted time series for all time steps and all features.
+
+    Example:
+
+        input_size = 82
+        hidden_size = 128
+        num_layers = 2
+        output_size = 82
+        dropout_rate = 0.1
+        model = Seq2Seq(input_size, hidden_size, num_layers, output_size, dropout_rate)
+
+        batch_size = 64
+        seq_length = 48
+        x = torch.randn(batch_size, seq_length, input_size)
+
+        output = model(x)
+    """
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout_rate):
         super(Seq2Seq, self).__init__()
         self.num_layers = num_layers
@@ -53,49 +107,167 @@ class Seq2Seq(torch.nn.Module):
         return x * mask
 
     def forward(self, x, hidden=None):
-        x = self.mask(x) # masking the 0 values in the input tensor
+        #x = self.mask(x) # removed for now as I realized the model should learn to handle the sparsity in the data implicitly. Also observed that performance does not change with masking.
         if hidden is None:
             h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device) 
             c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
             hidden = (h0, c0)
         
         encoder_outputs, hidden = self.encoder(x, hidden)
-        encoder_outputs = self.fc(encoder_outputs) #to change the output size of the encoder to match the input size of the decoder (82 in our case)
-        decoder_outputs, _ = self.decoder(encoder_outputs, hidden)
+        decoder_outputs, _ = self.decoder(torch.zeros_like(x), hidden)
 
         # Pass the final hidden state of the encoder through a linear layer to produce the final output
         out = self.fc(decoder_outputs) # (batch_size, seq_length, output_size):  The output is a 3D tensor with the predicted time series for all time steps and all the features.
         
-        #out = self.fc(decoder_outputs[:, -1, :]) # (batch_size, output_size):  The output is a 2D tensor with the predicted values for all the features at the final time step.
-
         return out
 
-#fix the dimensions to work with the LSTM model 
-class LSTM_Attention(torch.nn.Module):
+
+class Seq2Seq_TeacherForcing(torch.nn.Module):
+    """
+    A seq2seq model with teacher forcing for multivariate time series forecasting.
+    
+    The model consists of an encoder and a decoder LSTM. The encoder processes the input time series and generates
+    hidden states, which are then used by the decoder to produce the output time series. During training, teacher forcing
+    is applied with a specified probability to help the decoder learn better.
+
+    Attributes:
+        num_layers (int): Number of LSTM layers.
+        hidden_size (int): Number of hidden units in the LSTM layers.
+        output_size (int): Number of output features (dimensions) of the predicted time series.
+        encoder (nn.LSTM): Encoder LSTM.
+        decoder (nn.LSTM): Decoder LSTM.
+        fc (nn.Linear): Fully connected (Linear) layer.
+
+    Args:
+        input_size (int): The number of input features (dimensions) of the time series.
+        hidden_size (int): The number of hidden units in the LSTM layers.
+        num_layers (int): The number of LSTM layers.
+        output_size (int): The number of output features (dimensions) of the predicted time series.
+        dropout_rate (float): The dropout rate for the LSTM layers.
+    """
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout_rate):
-        super(LSTM_Attention, self).__init__()
+        super(Seq2Seq_TeacherForcing, self).__init__()
         self.num_layers = num_layers
         self.hidden_size = hidden_size
-        self.lstm = torch.nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout = dropout_rate, bidirectional=True)
+        self.output_size = output_size
+        self.encoder = torch.nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout_rate)
+        self.decoder = torch.nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout_rate)
         self.fc = torch.nn.Linear(hidden_size, output_size)
-        self.attention = torch.nn.Linear(2*hidden_size, 1)
-        
-    def forward(self, x):
-        # Set initial hidden and cell states 
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device) 
+
+    def forward(self, x, y, teacher_forcing_ratio=0.5):
+        # Encoder
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
-        
-        # Forward propagate LSTM
-        out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
-        
-        #attention
-        attention_weights = torch.nn.functional.softmax(self.attention(out), dim=1)
-        out = out * attention_weights
-        
-        # Decode the hidden state of the last time step
-        out = self.fc(out[:, -1, :])
+        _, hidden = self.encoder(x, (h0, c0))
 
-        # Convert the final state to our desired output shape (batch_size, output_size)
-        out = self.fc(out)
+        # Decoder
+        decoder_input = x[:, -1, :].unsqueeze(1)  # Use the last time step from the input as the initial decoder input
+        decoder_outputs = torch.zeros(x.size(0), x.size(1), self.output_size).to(device)
 
-        return out
+        for t in range(x.size(1)):
+            decoder_output, hidden = self.decoder(decoder_input, hidden)
+            out = self.fc(decoder_output)  # Transform the hidden state to the output shape
+            decoder_outputs[:, t, :] = out.squeeze(1)
+
+            # Teacher forcing: Use the ground truth as input for the next time step
+            if random.random() < teacher_forcing_ratio:
+                decoder_input = y[:, t, :].unsqueeze(1)
+            else:
+                decoder_input = out
+
+        return decoder_outputs
+    
+
+class Attention(torch.nn.Module):
+    def __init__(self):
+        super(Attention, self).__init__()
+
+    def forward(self, encoder_outputs, decoder_hidden):
+        # encoder_outputs: (batch_size, seq_length, hidden_size)
+        # decoder_hidden: (batch_size, hidden_size)
+
+        # Calculate the dot product between each encoder output and the decoder hidden state
+        scores = torch.matmul(encoder_outputs, decoder_hidden.unsqueeze(2)).squeeze(2)  # (batch_size, seq_length)
+
+        # Apply softmax to obtain attention weights
+        attn_weights = torch.softmax(scores, dim=1)  # (batch_size, seq_length)
+
+        # Calculate the weighted sum of the encoder outputs using the attention weights
+        context = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs).squeeze(1)  # (batch_size, hidden_size)
+
+        return context
+
+class Seq2Seq_Attention(torch.nn.Module):
+    """
+    Seq2Seq model with attention and Teacher Forcing for multivariate time series forecasting.
+
+    This model consists of an encoder, an attention mechanism, and a decoder.
+    The encoder processes the input time series and generates a hidden state representation.
+    The attention mechanism computes context vectors based on the encoder hidden states and the current decoder hidden state.
+    The decoder generates the output time series using the concatenation of the context vectors and its input (which can be either ground truth or its own previous output).
+
+    Args:
+        input_size (int): The number of input features.
+        hidden_size (int): The size of the hidden states in the LSTM layers.
+        num_layers (int): The number of LSTM layers in both the encoder and the decoder.
+        output_size (int): The number of output features.
+        dropout_rate (float): The dropout rate for the LSTM layers.
+
+    Input:
+        x (torch.Tensor): The input tensor with shape (batch_size, seq_length, input_size).
+        y (torch.Tensor): The ground truth tensor with shape (batch_size, seq_length, output_size).
+        teacher_forcing_ratio (float, optional): The probability of using teacher forcing during training. Default: 0.5.
+
+    Output:
+        decoder_outputs (torch.Tensor): The output tensor with shape (batch_size, seq_length, output_size), representing the predicted time series for all time steps and all features.
+
+    Example:
+
+        input_size = 82
+        hidden_size = 128
+        num_layers = 2
+        output_size = 82
+        dropout_rate = 0.1
+        model = Seq2Seq(input_size, hidden_size, num_layers, output_size, dropout_rate)
+
+        batch_size = 64
+        seq_length = 48
+        x = torch.randn(batch_size, seq_length, input_size)
+        y = torch.randn(batch_size, seq_length, output_size)
+
+        output = model(x, y)
+    """
+    def __init__(self, input_size, hidden_size, num_layers, output_size, dropout_rate):
+        super(Seq2Seq_Attention, self).__init__()
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.encoder = torch.nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout_rate)
+        self.decoder = torch.nn.LSTM(input_size + hidden_size, hidden_size, num_layers, batch_first=True, dropout=dropout_rate)
+        self.fc = torch.nn.Linear(hidden_size, output_size)
+        self.attention = Attention()
+
+    def forward(self, x, y, teacher_forcing_ratio=0.5):
+        # Encoder
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        encoder_outputs, hidden = self.encoder(x, (h0, c0))
+
+        # Decoder
+        decoder_input = x[:, -1, :].unsqueeze(1)  # Use the last time step from the input as the initial decoder input
+        decoder_outputs = torch.zeros(x.size(0), x.size(1), self.output_size).to(device)
+
+        for t in range(x.size(1)):
+            context = self.attention(encoder_outputs, hidden[0][-1])  # Compute attention context
+            decoder_input = torch.cat([decoder_input, context.unsqueeze(1)], dim=-1)  # Concatenate context with decoder input
+            decoder_output, hidden = self.decoder(decoder_input, hidden)
+            out = self.fc(decoder_output)  # Transform the hidden state to the output shape
+            decoder_outputs[:, t, :] = out.squeeze(1)
+
+            # Teacher forcing: Use the ground truth as input for the next time step
+            if random.random() < teacher_forcing_ratio:
+                decoder_input = y[:, t, :].unsqueeze(1)
+            else:
+                decoder_input = out
+
+        return decoder_outputs

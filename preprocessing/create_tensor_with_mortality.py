@@ -33,16 +33,17 @@ train_tensor[:, -1, -1] = train_mortality_tensor
 val_tensor[:, -1, -1] = val_mortality_tensor
 test_tensor[:, -1, -1] = test_mortality_tensor
 
-#want last two time steps to have same mortality value for proper feature lagging
-train_tensor[:, -2, -1] = train_mortality_tensor
-val_tensor[:, -2, -1] = val_mortality_tensor
-test_tensor[:, -2, -1] = test_mortality_tensor
+'''
+NOTE: THIS MAYBE A SOURCE OF DATA LEAK IF WE ARE PREDICTING THE FUTURE. NEED MORE TESTS TO CONFIRM!
+Currently, within processed_tensors, "0.4-mortality-ratio.pt" has only last time step mortality labels
+and the rest have last two time steps mortality labels using the code below
+'''
+#want last two time steps to have same mortality value for proper feature lagging?
+# train_tensor[:, -2, -1] = train_mortality_tensor
+# val_tensor[:, -2, -1] = val_mortality_tensor
+# test_tensor[:, -2, -1] = test_mortality_tensor
 
 #save the train, val and test datasets
-torch.save(train_tensor, os.path.join(os.curdir,"processed_tensors","LSTM_mortality_train.pt"))
-torch.save(val_tensor, os.path.join(os.curdir,"processed_tensors","LSTM_mortality_val.pt"))
-torch.save(test_tensor, os.path.join(os.curdir,"processed_tensors","LSTM_mortality_test.pt"))
-
-
-
-
+torch.save(train_tensor, os.path.join(os.curdir,"processed_tensors","LSTM_mortality_train_last.pt"))
+torch.save(val_tensor, os.path.join(os.curdir,"processed_tensors","LSTM_mortality_val_last.pt"))
+torch.save(test_tensor, os.path.join(os.curdir,"processed_tensors","LSTM_mortality_test_last.pt"))

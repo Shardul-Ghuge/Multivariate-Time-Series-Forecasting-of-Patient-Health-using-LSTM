@@ -1,3 +1,4 @@
+#USEFUL to test Multivariate LSTM model before large scale predictions with MIMIC
 import torch
 import torch.nn as nn
 

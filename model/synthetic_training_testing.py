@@ -8,13 +8,18 @@ import matplotlib.pyplot as plt
 
 DATA_DIR = "C:\\Users\\ghuge\\Desktop\\UofT\\Thesis\\Predicting-future-medical-diagnoses-with-LSTM\\model\\synthetic_data"
 MODEL_PATH = "C:\\Users\\ghuge\\Desktop\\UofT\\Thesis\\Predicting-future-medical-diagnoses-with-LSTM\\model\\trained_models"
+
 model_type = "base_lstm"
 #model_type = "seq2seq"
+#model_type = "teacher_forcing"
+#model_type = "attention"
 
 def get_model(model, model_params):
     models = {
-        "base_lstm": LSTM,
+        "base_lstm": BASE_LSTM,
         "seq2seq": Seq2Seq,
+        "teacher_forcing": Seq2Seq_TeacherForcing,
+        "attention": Seq2Seq_Attention
     }
     return models.get(model.lower())(**model_params)
 
