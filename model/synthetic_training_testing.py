@@ -39,9 +39,12 @@ else:
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #load the time-lagged synthetic data
-num_patients = 200
-X = torch.load(os.path.join(DATA_DIR,"size-{}-X_correlation1_2_rest_random.pt".format(num_patients)))
-y = torch.load(os.path.join(DATA_DIR,"size-{}-y_correlation1_2_rest_random.pt".format(num_patients)))
+num_patients = 39481
+X = torch.load(os.path.join(DATA_DIR,"size-{}-X_correlation1_2_68_random.pt".format(num_patients)))
+y = torch.load(os.path.join(DATA_DIR,"size-{}-y_correlation1_2_68_random.pt".format(num_patients)))
+
+# X = torch.load(os.path.join(DATA_DIR,"size-{}-X_correlation1_2_rest_0.pt".format(num_patients)))
+# y = torch.load(os.path.join(DATA_DIR,"size-{}-y_correlation1_2_rest_0.pt".format(num_patients)))
 
 #if "patients-{}" folder does not exist, create it
 if not os.path.exists(os.path.join(MODEL_PATH, model_type, "synthetic-data", "patients-{}".format(num_patients))):
@@ -61,7 +64,7 @@ print("x_train", x_train.shape, "y_train", y_train.shape)
 print("x_val", x_val.shape, "y_val", y_val.shape)
 print("x_test", x_test.shape, "y_test", y_test.shape)
 
-batch_size = 16
+batch_size = 64
 
 #create train, val and test loaders
 train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=False, drop_last=True)
@@ -83,8 +86,12 @@ class Optimization:
         # Sets model to train mode
         self.model.train()
 
-        # Makes predictions
-        yhat = self.model(x)
+        if model_type == "teacher_forcing" or model_type == "attention":
+            # Makes predictions
+            yhat = self.model(x, y) #need y for teacher-forcing
+        else:
+            # Makes predictions
+            yhat = self.model(x) #for BASE_LSTM
 
         # Computes loss
         loss = self.loss_fn(y, yhat)
@@ -101,12 +108,22 @@ class Optimization:
         return loss.item()
 
     def train(self, train_loader, val_loader, n_epochs):
+        '''Has early stopping enabled so that when there more than 5 epochs 
+        with no improvement in validation loss, the training stops.
+        This helps prevent overfitting and saves time.
+        '''
         model_path = os.path.join(MODEL_PATH, model_type,"synthetic-data", "patients-{}".format(num_patients),
                                   f'{model_type}_best_model_{datetime.now().strftime("%Y-%m-%d")}.pth')   
         best_val_loss = float('inf')
-        
+        patience = 5
+        epochs_without_improvement = 0
+    
         print("started training")
         for epoch in range(1, n_epochs + 1):
+            if epochs_without_improvement > patience:
+                print(f"Early stopping at epoch {epoch}.")
+                break
+
             batch_losses = []
             for x_batch, y_batch in train_loader:
                 x_batch = x_batch.to(device)
@@ -122,7 +139,11 @@ class Optimization:
                     x_val = x_val.to(device)
                     y_val = y_val.to(device)
                     self.model.eval()
-                    yhat = self.model(x_val)
+                    if model_type == "teacher_forcing" or model_type == "attention":
+                        yhat = self.model(x_val, y_val, teacher_forcing_ratio=0)
+                    else:
+                        yhat = self.model(x_val)
+
                     val_loss = self.loss_fn(y_val, yhat)
                     batch_val_losses.append(val_loss.item())
                 validation_loss = np.mean(batch_val_losses)
@@ -133,13 +154,15 @@ class Optimization:
                     f"[{epoch}/{n_epochs}] Training loss: {training_loss:.6f}\t Validation loss: {validation_loss:.6f}"
                 )
 
-            #Only save the model if the validation loss is the lowest
-            if validation_loss < best_val_loss:
+            if np.round(validation_loss, 4) < np.round(best_val_loss, 4):
                 best_val_loss = validation_loss
                 best_epoch = epoch
+                epochs_without_improvement = 0
                 torch.save(self.model.state_dict(), model_path)
-        
-        print("Best {} model saved at lowest validation set error of {} at epoch {}".format(model_type ,np.round(best_val_loss,6), best_epoch)) 
+            else:
+                epochs_without_improvement += 1
+
+        print("Best {} model saved at lowest validation set error of {} at epoch {}".format(model_type, np.round(best_val_loss, 6), best_epoch))  
         
     def evaluate(self, test_loader):
         '''
@@ -148,6 +171,14 @@ class Optimization:
         Thats why we create a prediction_batch and target_batch list. Then, you can concatenate the predicted and target 
         values from all batches into a single 3D numpy array using the np.concatenate function
         '''
+        # Load the best saved model from training
+        model_path = os.path.join(MODEL_PATH, model_type,"synthetic-data", "patients-{}".format(num_patients),
+                                  f'{model_type}_best_model_{datetime.now().strftime("%Y-%m-%d")}.pth')
+        self.model.load_state_dict(torch.load(model_path))
+        
+        # Print the name of the best saved model
+        print(f"Loaded the best saved model: {os.path.basename(model_path)}")
+
         print("started evaluation")
         with torch.no_grad():
             batch_test_losses = []
@@ -198,7 +229,7 @@ num_layers = 3 #depth of the model
 output_size = 83 #same as input_size becasue we are predicting all 82 variables
 dropout_rate = 0.2
 
-n_epochs = 250
+n_epochs = 20
 learning_rate = 1e-3
 weight_decay = 1e-6
 
